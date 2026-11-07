@@ -1682,7 +1682,12 @@ class CsvEditorController {
     mouseWheelZoomEnabled: boolean;
     mouseWheelZoomInvert: boolean;
   }): string {
-    const { webview, nonce, fontFamily, fontSize, cellPadding, separator, tableHtml, chunksJson, extraColumnColorCss, nextChunkStart, hasRemoteChunks, mouseWheelZoomEnabled, mouseWheelZoomInvert } = args;
+    const { webview, nonce, separator, tableHtml, chunksJson, extraColumnColorCss, nextChunkStart, hasRemoteChunks, mouseWheelZoomEnabled, mouseWheelZoomInvert } = args;
+    // These come from settings, which an untrusted workspace can set to any JSON value.
+    // Sanitize them so they can't break out of the CSS or HTML they're interpolated into.
+    const fontFamily = CsvEditorController.sanitizeFontFamily(args.fontFamily);
+    const fontSize = CsvEditorController.normalizeFontSize(args.fontSize) ?? 14;
+    const cellPadding = CsvEditorController.normalizeCellPadding(args.cellPadding);
     const isDark = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark;
     // Build script URI using file path for compatibility (older APIs may lack Uri.joinPath)
     const scriptUri = webview.asWebviewUri(
@@ -1701,7 +1706,7 @@ class CsvEditorController {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CSV</title>
     <style nonce="${nonce}">
-      body { font-family: ${this.escapeCss(fontFamily)}; font-size: ${fontSize}px; margin: 0; padding: 0; user-select: none; }
+      body { font-family: ${fontFamily}; font-size: ${fontSize}px; margin: 0; padding: 0; user-select: none; }
       .table-container { overflow: auto; height: 100vh; }
       table { border-collapse: collapse; width: max-content; }
       th, td { padding: ${cellPadding}px 8px; border: 1px solid ${isDark ? '#555' : '#ccc'}; font-size: inherit; }
@@ -1729,7 +1734,7 @@ class CsvEditorController {
         display: none;
         align-items: stretch;
         color: #d4d4d4;
-        font-family: ${this.escapeCss(fontFamily)};
+        font-family: ${fontFamily};
         font-size: inherit;
       }
       #findReplaceWidget.open { display: flex; }
@@ -1885,7 +1890,7 @@ class CsvEditorController {
         font-size: inherit;
       }
       #findReplaceWidget .fr-overflow-item:hover { background: rgba(255,255,255,0.05); }
-      #contextMenu { position: absolute; display: none; background: ${isDark ? '#2d2d2d' : '#ffffff'}; border: 1px solid ${isDark ? '#555' : '#ccc'}; z-index: 10000; font-family: ${this.escapeCss(fontFamily)}; font-size: inherit; }
+      #contextMenu { position: absolute; display: none; background: ${isDark ? '#2d2d2d' : '#ffffff'}; border: 1px solid ${isDark ? '#555' : '#ccc'}; z-index: 10000; font-family: ${fontFamily}; font-size: inherit; }
       #contextMenu div { padding: 4px 12px; cursor: pointer; }
       #contextMenu div:hover { background: ${isDark ? '#3d3d3d' : '#eeeeee'}; }
 
@@ -2068,9 +2073,25 @@ class CsvEditorController {
     return ` title="${this.escapeHtml(text)}"`;
   }
 
-  private escapeCss(text: string): string {
-    // conservative; ok for font-family lists
-    return text.replace(/[\\"]/g, m => (m === '\\' ? '\\\\' : '\\"'));
+  // Font-family lists only need names, commas, spaces and quotes. Drop anything that could end
+  // the declaration or the <style> element, start a comment or at-rule, or call a CSS function
+  // such as url().
+  private static sanitizeFontFamily(value: unknown): string {
+    const cleaned = typeof value === 'string'
+      ? value.replace(/[\u0000-\u001f\u007f;{}<>\\/()@!]/g, '').trim()
+      : '';
+    return cleaned || 'monospace';
+  }
+
+  private static normalizeCellPadding(value: unknown): number {
+    const parsed =
+      typeof value === 'number' ? value
+      : typeof value === 'string' && value.trim() !== '' ? Number(value)
+      : NaN;
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return 4;
+    }
+    return Math.min(Math.round(parsed * 100) / 100, 100);
   }
 
   private isDate(value: string): boolean {
@@ -2697,6 +2718,16 @@ export class CsvEditorProvider implements vscode.CustomTextEditorProvider {
     },
     resolveEffectiveFontSize(csvFontSize: unknown, editorFontSize: unknown): number {
       return (CsvEditorController as any).resolveEffectiveFontSize(csvFontSize, editorFontSize);
+    },
+    sanitizeFontFamily(value: unknown): string {
+      return (CsvEditorController as any).sanitizeFontFamily(value);
+    },
+    normalizeCellPadding(value: unknown): number {
+      return (CsvEditorController as any).normalizeCellPadding(value);
+    },
+    wrapHtml(args: Record<string, unknown>): string {
+      const c: any = new (CsvEditorController as any)({ extensionPath: '/ext' } as any);
+      return c.wrapHtml(args);
     },
     hslToHex(h: number, s: number, l: number): string {
       const c: any = new (CsvEditorController as any)({} as any);

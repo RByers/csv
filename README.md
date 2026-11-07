@@ -54,6 +54,10 @@ Working with CSV files shouldn’t be a chore. With CSV, you get:
 This extension is built for VS Code **1.70.0** and later. It has been tested with
 Cursor (built on VS Code 1.99) and the latest VS Code releases (1.102).
 
+It also works in [Restricted Mode](https://code.visualstudio.com/docs/editing/workspaces/workspace-trust)
+(untrusted workspaces). The extension never runs code from the workspace, and settings that reach
+the CSV view are sanitized, so a workspace's `.vscode/settings.json` can't inject content into it.
+
 ## Getting Started
 
 ### 1. Install the Extension
